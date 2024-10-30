@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
 require_relative 'input'
+require_relative 'save_manager'
 
 # Main game class
 class Game
+  attr_reader :turn, :answer, :guess_so_far, :guessed_letters
+
   TURNS = 7
   WORDS_FILE_PATH = 'google-10000-english-no-swears.txt'
   WORD_LENGTH_RANGE = (5..12).freeze
@@ -13,8 +16,7 @@ class Game
     @answer = make_answer
     @guess_so_far = Array.new(@answer.length, '-')
     @guessed_letters = []
-    # game_status is one of: :ongoing, :win, :lose
-    @game_status = :ongoing
+    @game_status = :ongoing # game_status is one of: :ongoing, :win, :lose, :saved
   end
 
   def play
@@ -39,8 +41,8 @@ class Game
       elsif @game_status == :lose
         puts 'You lost'
       end
-    else # prepare code for the option to save & quit
-      puts 'cya!'
+    elsif @game_status == :saved
+      SaveManager.save_game self
     end
   end
 
@@ -57,18 +59,30 @@ class Game
 
   def guess_letter
     loop do
-      guess = Input.get 'Guess a letter: '
-      if !(guess.size == 1 && guess.match?(/[a-zA-Z]/))
-        puts 'Please choose a valid letter'
-      elsif @guessed_letters.include? guess
-        puts 'You have already guessed this letter.'
-      else
-        return guess
-      end
+      guess = (Input.get 'Guess a letter: ').downcase
+      return if guess == 'save'
+
+      validation_message = get_validation_message guess
+      return guess if validation_message.nil?
+
+      puts validation_message
+    end
+  end
+
+  def get_validation_message(guess)
+    if !(guess.size == 1 && guess.match?(/[a-zA-Z]/))
+      'Please choose a valid letter'
+    elsif @guessed_letters.include? guess
+      'You have already guessed this letter.'
     end
   end
 
   def update_guessed(guess)
+    if guess.nil?
+      @game_status = :saved
+      return
+    end
+
     @guessed_letters.append guess
     @answer.chars.each_with_index do |c, i|
       @guess_so_far[i] = guess if c == guess
@@ -76,6 +90,8 @@ class Game
   end
 
   def check_game_status
+    return if @game_status != :ongoing
+
     if !@guess_so_far.include? '-'
       @game_status = :win
     elsif @turn >= TURNS
